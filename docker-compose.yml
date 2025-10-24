@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  mongo:
+    image: mongo:latest
+    container_name: timesheet-mongo
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - timesheet-network
+
+  save-service:
+    build: ./save-service
+    container_name: save-service
+    ports:
+      - "3000:3000"
+    environment:
+      MONGODB_URI: mongodb://admin:password@mongo:27017/timesheet
+      PORT: 3000
+    depends_on:
+      - mongo
+    networks:
+      - timesheet-network
+    restart: unless-stopped
+
+  submit-service:
+    build: ./submit-service
+    container_name: submit-service
+    ports:
+      - "3001:3001"
+    environment:
+      MONGODB_URI: mongodb://admin:password@mongo:27017/timesheet
+      PORT: 3001
+    depends_on:
+      - mongo
+    networks:
+      - timesheet-network
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+
+networks:
+  timesheet-network:
+    driver: bridge
