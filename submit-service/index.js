@@ -8,17 +8,35 @@ const router = express.Router();
 app.use(cors());
 app.use(express.json());
 
-const mongoDBURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/timesheet';
+const mongoDBURI = process.env.MONGODB_URI || 'mongodb://admin:password@mongo:27017/timesheet?authSource=admin';
 
-mongoose.connect(mongoDBURI, {
-  serverSelectionTimeoutMS: 5000,
-  connectTimeoutMS: 5000,
-  retryWrites: false
-}).then(() => {
-  console.log('Connected to MongoDB');
-}).catch((err) => {
-  console.error('Error connecting to MongoDB:', err);
-});
+// MongoDB Connection with Retry Logic
+const connectToDatabase = async (retries = 5, delay = 5000) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await mongoose.connect(mongoDBURI, {
+        serverSelectionTimeoutMS: 5000,
+        connectTimeoutMS: 5000,
+        retryWrites: false
+      });
+      console.log('✓ Connected to MongoDB');
+      return true;
+    } catch (err) {
+      console.error(`✗ MongoDB connection attempt ${i + 1}/${retries} failed:`, err.message);
+      
+      if (i < retries - 1) {
+        console.log(`Retrying in ${delay / 1000} seconds...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        console.error('✗ Failed to connect to MongoDB after all retries');
+        return false;
+      }
+    }
+  }
+};
+
+// Connect to database on startup
+connectToDatabase();
 
 const timesheetSchema = new mongoose.Schema({
   date:{type: Date, required: true},
