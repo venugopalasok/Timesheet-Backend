@@ -9,10 +9,16 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: timesheet
     volumes:
       - mongo_data:/data/db
     networks:
       - timesheet-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   save-service:
     build: ./save-service
@@ -20,10 +26,11 @@ services:
     ports:
       - "3000:3000"
     environment:
-      MONGODB_URI: mongodb://admin:password@mongo:27017/timesheet
+      MONGODB_URI: mongodb://admin:password@mongo:27017/timesheet?authSource=admin
       PORT: 3000
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
     networks:
       - timesheet-network
     restart: unless-stopped
@@ -34,10 +41,11 @@ services:
     ports:
       - "3001:3001"
     environment:
-      MONGODB_URI: mongodb://admin:password@mongo:27017/timesheet
+      MONGODB_URI: mongodb://admin:password@mongo:27017/timesheet?authSource=admin
       PORT: 3001
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
     networks:
       - timesheet-network
     restart: unless-stopped

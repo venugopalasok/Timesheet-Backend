@@ -88,6 +88,69 @@ router.post('/timesheets', async (req, res) => {
   }
 });
 
+// Weekly Timesheets Endpoint - Create/Update records for entire week
+router.post('/timesheets/weekly', async (req, res) => {
+  try {
+    const { startDate, endDate, hours, employeeId, projectId, recordType, taskId } = req.body;
+
+    // Validate inputs
+    if (!startDate || !endDate || !hours || !employeeId || !projectId || !recordType || !taskId) {
+      return res.status(400).json({ 
+        message: 'Missing required fields', 
+        required: ['startDate', 'endDate', 'hours', 'employeeId', 'projectId', 'recordType', 'taskId']
+      });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (start > end) {
+      return res.status(400).json({ message: 'startDate must be before endDate' });
+    }
+
+    // Generate array of dates for the week
+    const dates = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      dates.push(new Date(d));
+    }
+
+    // Create or update records for each day in the week
+    const results = [];
+    for (const date of dates) {
+      const record = await Timesheet.findOneAndUpdate(
+        { 
+          date: date, 
+          employeeId: employeeId 
+        },
+        { 
+          hours, 
+          projectId, 
+          recordType, 
+          taskId,
+          status: 'Submitted',
+          updatedAt: Date.now()
+        },
+        { 
+          new: true,
+          upsert: true
+        }
+      );
+      results.push(record);
+    }
+
+    res.status(201).json({ 
+      message: 'Weekly timesheets submitted successfully', 
+      count: results.length,
+      startDate: start.toISOString().split('T')[0],
+      endDate: end.toISOString().split('T')[0],
+      data: results,
+      action: 'bulk_submitted'
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error submitting weekly timesheets', error: error.message });
+  }
+});
+
 router.get('/health', (req, res) => {
   res.json({ status: 'OK' });
 });
@@ -98,7 +161,8 @@ app.get('/', (req, res) => {
     message: 'Timesheet Submit Service',
     availableEndpoints: [
       'GET  /health',
-      'POST /timesheets'
+      'POST /timesheets',
+      'POST /timesheets/weekly'
     ]
   });
 });
@@ -113,7 +177,8 @@ app.use((req, res) => {
     message: `${req.method} ${req.originalUrl} is not defined`,
     availableEndpoints: [
       'GET  /submit-service/health',
-      'POST /submit-service/timesheets'
+      'POST /submit-service/timesheets',
+      'POST /submit-service/timesheets/weekly'
     ],
     hint: 'Make sure to include /submit-service prefix in your URL'
   });
