@@ -56,11 +56,12 @@ router.post('/timesheets', async (req, res) => {
   try{
     const { date, hours, employeeId, projectId, recordType, taskId } = req.body;
     
-    // Search for existing record with same date and employeeId
+    // Search for existing record with same date, employeeId, AND recordType
     const existingRecord = await Timesheet.findOneAndUpdate(
       { 
         date: new Date(date), 
-        employeeId: employeeId 
+        employeeId: employeeId,
+        recordType: recordType
       },
       { 
         hours, 
@@ -94,7 +95,13 @@ router.post('/timesheets/weekly', async (req, res) => {
     const { startDate, endDate, hours, employeeId, projectId, recordType, taskId } = req.body;
 
     // Validate inputs
-    if (!startDate || !endDate || !hours || !employeeId || !projectId || !recordType || !taskId) {
+    if (startDate === undefined || startDate === null || 
+        endDate === undefined || endDate === null || 
+        hours === undefined || hours === null || 
+        employeeId === undefined || employeeId === null || 
+        projectId === undefined || projectId === null || 
+        recordType === undefined || recordType === null || 
+        taskId === undefined || taskId === null) {
       return res.status(400).json({ 
         message: 'Missing required fields', 
         required: ['startDate', 'endDate', 'hours', 'employeeId', 'projectId', 'recordType', 'taskId']
@@ -120,7 +127,8 @@ router.post('/timesheets/weekly', async (req, res) => {
       const record = await Timesheet.findOneAndUpdate(
         { 
           date: date, 
-          employeeId: employeeId 
+          employeeId: employeeId,
+          recordType: recordType
         },
         { 
           hours, 
@@ -148,6 +156,51 @@ router.post('/timesheets/weekly', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: 'Error submitting weekly timesheets', error: error.message });
+  }
+});
+
+router.get('/timesheets', async (req, res) => {
+  try {
+    const { employeeId, startDate, endDate } = req.query;
+
+    // Build filter query
+    let filter = {};
+    if (employeeId) {
+      filter.employeeId = employeeId;
+    }
+    if (startDate || endDate) {
+      filter.date = {};
+      if (startDate) {
+        filter.date.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        filter.date.$lte = new Date(endDate);
+      }
+    }
+
+    const timesheets = await Timesheet.find(filter).sort({ date: 1 });
+    res.status(200).json({
+      message: 'Submitted timesheets retrieved successfully',
+      count: timesheets.length,
+      data: timesheets
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error retrieving timesheets', error: error.message });
+  }
+});
+
+router.get('/timesheets/:id', async (req, res) => {
+  try {
+    const timesheet = await Timesheet.findById(req.params.id);
+    if (!timesheet) {
+      return res.status(404).json({ message: 'Timesheet not found' });
+    }
+    res.status(200).json({
+      message: 'Timesheet retrieved successfully',
+      data: timesheet
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error retrieving timesheet', error: error.message });
   }
 });
 
