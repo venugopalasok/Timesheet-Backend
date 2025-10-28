@@ -27,6 +27,7 @@ const timesheetSchema = new mongoose.Schema({
   projectId:{type: String, required: true},
   taskId:{type: String, required: true},
   recordType:{type: String, required: true},
+  wfh:{type: Boolean, default: false},
   status:{type: String, default: 'Saved'},
   createdAt:{type: Date, default: Date.now},
   updatedAt:{type: Date, default: Date.now},
@@ -36,7 +37,7 @@ const Timesheet = mongoose.model('Timesheet', timesheetSchema);
 
 router.post('/timesheets', async (req, res) => {
   try{
-    const { date, hours, employeeId, projectId, recordType, taskId } = req.body;
+    const { date, hours, employeeId, projectId, recordType, taskId, wfh } = req.body;
     
     // Search for existing record with same date and employeeId
     const existingRecord = await Timesheet.findOneAndUpdate(
@@ -49,6 +50,7 @@ router.post('/timesheets', async (req, res) => {
         projectId, 
         recordType, 
         taskId,
+        wfh: wfh !== undefined ? wfh : false,
         updatedAt: Date.now()
       },
       { 

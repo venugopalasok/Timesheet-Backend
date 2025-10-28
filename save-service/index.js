@@ -45,6 +45,7 @@ const timesheetSchema = new mongoose.Schema({
   projectId:{type: String, required: true},
   taskId:{type: String, required: true},
   recordType:{type: String, required: true},
+  wfh:{type: Boolean, default: false},
   status:{type: String, default: 'Saved'},
   createdAt:{type: Date, default: Date.now},
   updatedAt:{type: Date, default: Date.now},
@@ -71,11 +72,26 @@ router.get('/timesheets', async (req, res) => {
       }
     }
 
-    const timesheets = await Timesheet.find(filter).sort({ date: 1 });
+    const timesheets = await Timesheet.find(filter).sort({ date: 1 }).lean();
+    
+    console.log('[DEBUG-GET] Raw timesheets from DB:', timesheets.length);
+    console.log('[DEBUG-GET] Sample record:', timesheets[0]);
+    
+    // Ensure wfh field exists in all records (for backward compatibility)
+    const enrichedTimesheets = timesheets.map(sheet => {
+      const enriched = {
+        ...sheet,
+        wfh: sheet.wfh !== undefined ? sheet.wfh : false
+      };
+      return enriched;
+    });
+    
+    console.log('[DEBUG-GET] Enriched sample:', enrichedTimesheets[0]);
+    
     res.status(200).json({
       message: 'Timesheets retrieved successfully',
-      count: timesheets.length,
-      data: timesheets
+      count: enrichedTimesheets.length,
+      data: enrichedTimesheets
     });
   } catch (error) {
     res.status(500).json({ message: 'Error retrieving timesheets', error: error.message });
@@ -84,10 +100,16 @@ router.get('/timesheets', async (req, res) => {
 
 router.get('/timesheets/:id', async (req, res) => {
   try {
-    const timesheet = await Timesheet.findById(req.params.id);
+    const timesheet = await Timesheet.findById(req.params.id).lean();
     if (!timesheet) {
       return res.status(404).json({ message: 'Timesheet not found' });
     }
+    
+    // Ensure wfh field exists (for backward compatibility)
+    if (timesheet.wfh === undefined) {
+      timesheet.wfh = false;
+    }
+    
     res.status(200).json({
       message: 'Timesheet retrieved successfully',
       data: timesheet
@@ -99,7 +121,9 @@ router.get('/timesheets/:id', async (req, res) => {
 
 router.post('/timesheets', async (req, res) => {
   try{
-    const { date, hours, employeeId, projectId, recordType, taskId } = req.body;
+    const { date, hours, employeeId, projectId, recordType, taskId, wfh } = req.body;
+    
+    console.log('[DEBUG-POST] Received:', { date, hours, employeeId, recordType, wfh });
     
     // Search for existing record with same date, employeeId, AND recordType
     const existingRecord = await Timesheet.findOneAndUpdate(
@@ -113,6 +137,7 @@ router.post('/timesheets', async (req, res) => {
         projectId, 
         recordType, 
         taskId,
+        wfh: wfh !== undefined ? wfh : false,
         updatedAt: Date.now()
       },
       { 
@@ -120,6 +145,8 @@ router.post('/timesheets', async (req, res) => {
         upsert: true // Create if doesn't exist
       }
     );
+
+    console.log('[DEBUG-POST] Saved record:', existingRecord);
 
     if (existingRecord) {
       res.status(201).json({ 
@@ -136,7 +163,7 @@ router.post('/timesheets', async (req, res) => {
 // Weekly Timesheets Endpoint - Create/Update records for entire week
 router.post('/timesheets/weekly', async (req, res) => {
   try {
-    const { startDate, endDate, hours, employeeId, projectId, recordType, taskId } = req.body;
+    const { startDate, endDate, hours, employeeId, projectId, recordType, taskId, wfh } = req.body;
 
     // Validate inputs
     if (startDate === undefined || startDate === null || 
@@ -179,6 +206,7 @@ router.post('/timesheets/weekly', async (req, res) => {
           projectId, 
           recordType, 
           taskId,
+          wfh: wfh !== undefined ? wfh : false,
           updatedAt: Date.now()
         },
         { 
