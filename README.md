@@ -1,11 +1,17 @@
 # Timesheet Backend - Microservices
 
-A Node.js microservices backend for managing timesheet records with two main services: Save and Submit.
+A Node.js microservices backend for managing timesheet records with three main services: Authentication, Save, and Submit.
 
 ## Project Structure
 
 ```
 Timesheet-backend/
+├── auth-service/          # Authentication & user management service
+│   ├── index.js
+│   ├── package.json
+│   ├── Dockerfile
+│   ├── README.md
+│   └── .gitignore
 ├── save-service/          # Service for saving draft timesheets
 │   ├── index.js
 │   ├── package.json
@@ -17,23 +23,42 @@ Timesheet-backend/
 │   ├── Dockerfile
 │   └── .gitignore
 ├── docker-compose.yml     # Orchestrate all services
-├── package.json          # Root package.json (optional)
+├── FRONTEND_INTEGRATION.md # Frontend integration guide
+├── package.json           # Root package.json (optional)
 └── README.md
 ```
 
 ## Services
+
+### Auth Service (Port 3002) ⭐ NEW
+- **Description**: User authentication, registration, and profile management with JWT
+- **Endpoints**:
+  - `POST /auth-service/register` - Register new user
+  - `POST /auth-service/login` - Login user
+  - `GET /auth-service/profile` - Get user profile (protected)
+  - `PUT /auth-service/profile` - Update user profile (protected)
+  - `PUT /auth-service/change-password` - Change password (protected)
+  - `GET /auth-service/verify-token` - Verify JWT token (protected)
+  - `GET /auth-service/users` - Get all users (protected)
+  - `GET /auth-service/users/:id` - Get user by ID (protected)
+  - `GET /auth-service/health` - Health check
+- **Documentation**: See [auth-service/README.md](./auth-service/README.md)
 
 ### Save Service (Port 3000)
 - **Description**: Saves draft timesheet records with status "Saved"
 - **Endpoints**:
   - `GET /save-service/health` - Health check
   - `POST /save-service/timesheets` - Create or update timesheet
+  - `POST /save-service/timesheets/weekly` - Create/update weekly timesheets
+  - `GET /save-service/timesheets` - Get saved timesheets
 
 ### Submit Service (Port 3001)
 - **Description**: Submits final timesheet records with status "Submitted"
 - **Endpoints**:
   - `GET /submit-service/health` - Health check
   - `POST /submit-service/timesheets` - Create or update timesheet
+  - `POST /submit-service/timesheets/weekly` - Create/update weekly timesheets
+  - `GET /submit-service/timesheets` - Get submitted timesheets
 
 ## Prerequisites
 
@@ -82,6 +107,44 @@ docker-compose down
 
 ## API Endpoints
 
+### Auth Service
+```bash
+# Health Check
+curl http://localhost:3002/auth-service/health
+
+# Register New User
+curl -X POST http://localhost:3002/auth-service/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "john.doe@example.com",
+    "password": "password123",
+    "confirmPassword": "password123"
+  }'
+
+# Login User
+curl -X POST http://localhost:3002/auth-service/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "john.doe@example.com",
+    "password": "password123"
+  }'
+
+# Get User Profile (Protected - requires JWT token)
+curl http://localhost:3002/auth-service/profile \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# Update User Profile (Protected)
+curl -X PUT http://localhost:3002/auth-service/profile \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -d '{
+    "firstName": "Jane",
+    "lastName": "Smith"
+  }'
+```
+
 ### Save Service
 ```bash
 # Health Check
@@ -120,12 +183,27 @@ curl -X POST http://localhost:3001/submit-service/timesheets \
 
 ## Database
 
-Both services share the same MongoDB database: `timesheet`
+All services share the same MongoDB database: `timesheet`
 
 **Collections:**
+- `users` - Stores user accounts and authentication data
 - `timesheets` - Stores all timesheet records
 
-**Record Schema:**
+**User Schema:**
+```javascript
+{
+  firstName: String,
+  lastName: String,
+  email: String,        // unique, lowercase
+  password: String,     // bcrypt hashed
+  role: String,         // "user" | "admin" | "manager"
+  isActive: Boolean,
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+**Timesheet Schema:**
 ```javascript
 {
   date: Date,
@@ -134,7 +212,8 @@ Both services share the same MongoDB database: `timesheet`
   projectId: String,
   taskId: String,
   recordType: String,
-  status: String,  // "Saved" or "Submitted"
+  wfh: Boolean,         // Work from home flag
+  status: String,       // "Saved" or "Submitted"
   createdAt: Date,
   updatedAt: Date
 }
@@ -211,6 +290,77 @@ lsof -i :3001 | grep LISTEN | awk '{print $2}' | xargs kill -9
 - Ensure MongoDB is running
 - Check connection string in `.env` file
 - Verify network connectivity if using Docker
+
+## Frontend Integration
+
+The authentication service is designed to work seamlessly with the React/TypeScript frontend.
+
+### Quick Start
+
+1. **Start the backend services:**
+```bash
+docker-compose up -d
+```
+
+2. **Use the auth API in your frontend:**
+```typescript
+import { register, login, logout } from './services/authAPI'
+
+// Register user
+await register({
+  firstName: 'John',
+  lastName: 'Doe',
+  email: 'john@example.com',
+  password: 'password123'
+})
+
+// Login user
+await login({
+  email: 'john@example.com',
+  password: 'password123'
+})
+
+// Logout
+logout()
+```
+
+3. **Frontend integration files provided:**
+   - `src/services/authAPI.ts` - Auth API client
+   - `src/contexts/AuthContext.tsx` - React context for auth state
+   - `src/pages/SignUp.tsx` - Updated signup page
+   - `src/pages/SignIn.tsx` - Updated signin page
+   - `src/components/Header.tsx` - Updated to display user info
+
+**📚 Complete Integration Guide:** See [FRONTEND_INTEGRATION.md](./FRONTEND_INTEGRATION.md)
+
+**📖 Auth API Documentation:** See [auth-service/README.md](./auth-service/README.md)
+
+## Security Notes
+
+⚠️ **Important for Production:**
+
+1. **Change JWT Secret**: Update `JWT_SECRET` in docker-compose.yml
+2. **Use HTTPS**: Always use HTTPS in production
+3. **Secure MongoDB**: Use strong passwords and authentication
+4. **Environment Variables**: Never commit `.env` files with sensitive data
+5. **CORS Configuration**: Restrict CORS to your frontend domain only
+
+## Quick Test
+
+Test all services are running:
+
+```bash
+# Test Auth Service
+curl http://localhost:3002/auth-service/health
+
+# Test Save Service  
+curl http://localhost:3000/save-service/health
+
+# Test Submit Service
+curl http://localhost:3001/submit-service/health
+```
+
+All should return `{"status":"OK"}`
 
 ## License
 

@@ -50,6 +50,23 @@ services:
       - timesheet-network
     restart: unless-stopped
 
+  auth-service:
+    build: ./auth-service
+    container_name: auth-service
+    ports:
+      - "3002:3002"
+    environment:
+      MONGODB_URI: mongodb://admin:password@mongo:27017/timesheet?authSource=admin
+      PORT: 3002
+      JWT_SECRET: your-secret-key-change-in-production
+      JWT_EXPIRES_IN: 7d
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - timesheet-network
+    restart: unless-stopped
+
 volumes:
   mongo_data:
 
