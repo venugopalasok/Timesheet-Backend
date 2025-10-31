@@ -1,6 +1,50 @@
 version: '3.8'
 
 services:
+  # API Gateway - Single entry point for all services
+  api-gateway:
+    image: nginx:alpine
+    container_name: api-gateway
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - auth-service
+      - save-service
+      - submit-service
+    networks:
+      - timesheet-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # RabbitMQ Message Queue with Management UI
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: timesheet-rabbitmq
+    ports:
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: password
+      RABBITMQ_DEFAULT_VHOST: /
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - timesheet-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # MongoDB Database
   mongo:
     image: mongo:latest
     container_name: timesheet-mongo
@@ -28,8 +72,11 @@ services:
     environment:
       MONGODB_URI: mongodb://admin:password@mongo:27017/timesheet?authSource=admin
       PORT: 3000
+      RABBITMQ_URL: amqp://admin:password@rabbitmq:5672
     depends_on:
       mongo:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     networks:
       - timesheet-network
@@ -43,8 +90,11 @@ services:
     environment:
       MONGODB_URI: mongodb://admin:password@mongo:27017/timesheet?authSource=admin
       PORT: 3001
+      RABBITMQ_URL: amqp://admin:password@rabbitmq:5672
     depends_on:
       mongo:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     networks:
       - timesheet-network
@@ -60,8 +110,27 @@ services:
       PORT: 3002
       JWT_SECRET: your-secret-key-change-in-production
       JWT_EXPIRES_IN: 7d
+      RABBITMQ_URL: amqp://admin:password@rabbitmq:5672
     depends_on:
       mongo:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - timesheet-network
+    restart: unless-stopped
+
+  # Notification Service - Processes async events from RabbitMQ
+  notification-service:
+    build: ./notification-service
+    container_name: notification-service
+    ports:
+      - "3003:3003"
+    environment:
+      PORT: 3003
+      RABBITMQ_URL: amqp://admin:password@rabbitmq:5672
+    depends_on:
+      rabbitmq:
         condition: service_healthy
     networks:
       - timesheet-network
@@ -69,6 +138,7 @@ services:
 
 volumes:
   mongo_data:
+  rabbitmq_data:
 
 networks:
   timesheet-network:

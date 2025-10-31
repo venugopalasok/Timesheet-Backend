@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const validator = require('validator');
+const { connectToRabbitMQ, publishUserRegistered } = require('./rabbitmq');
 
 const app = express();
 const router = express.Router();
@@ -40,8 +41,11 @@ const connectToDatabase = async (retries = 5, delay = 5000) => {
   }
 };
 
-// Connect to database on startup
+// Connect to database and RabbitMQ on startup
 connectToDatabase();
+connectToRabbitMQ().catch(err => {
+  console.error('Failed to connect to RabbitMQ, notifications will be disabled:', err.message);
+});
 
 // User Schema
 const userSchema = new mongoose.Schema({
@@ -262,6 +266,12 @@ router.post('/register', async (req, res) => {
     });
 
     await user.save();
+
+    // Publish user registered event to RabbitMQ
+    await publishUserRegistered(user).catch(err => {
+      console.error('Failed to publish user registered event:', err.message);
+      // Don't fail registration if message queue fails
+    });
 
     // Generate token
     const token = user.generateAuthToken();
