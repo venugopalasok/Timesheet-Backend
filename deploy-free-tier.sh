@@ -37,14 +37,48 @@ sudo apt update && sudo apt upgrade -y
 
 # Step 2: Install Docker
 echo -e "${GREEN}Step 2: Installing Docker...${NC}"
+DOCKER_NEEDS_INSTALL=false
+
 if ! command -v docker &> /dev/null; then
     sudo apt install -y docker.io
     sudo systemctl enable docker
     sudo systemctl start docker
     sudo usermod -aG docker $USER
-    echo -e "${YELLOW}Docker installed. You may need to log out and back in.${NC}"
+    DOCKER_NEEDS_INSTALL=true
+    echo -e "${YELLOW}Docker installed. User added to docker group.${NC}"
 else
     echo "Docker already installed"
+    # Check if user is in docker group
+    if ! groups | grep -q docker; then
+        echo -e "${YELLOW}User not in docker group. Adding...${NC}"
+        sudo usermod -aG docker $USER
+        DOCKER_NEEDS_INSTALL=true
+    fi
+fi
+
+# Check Docker permissions and set command prefix
+# Note: Group membership changes require new login session to take effect
+# So we'll use sudo for docker commands if needed
+if docker info &>/dev/null 2>&1; then
+    DOCKER_CMD="docker"
+    COMPOSE_CMD="docker-compose"
+    echo -e "${GREEN}Docker permissions verified (no sudo needed)${NC}"
+else
+    # Try with sudo
+    if sudo docker info &>/dev/null 2>&1; then
+        DOCKER_CMD="sudo docker"
+        COMPOSE_CMD="sudo docker-compose"
+        if [ "$DOCKER_NEEDS_INSTALL" = true ]; then
+            echo -e "${YELLOW}Note: Docker group membership requires a new login session.${NC}"
+            echo -e "${YELLOW}Using sudo for Docker commands for now. After logging out/in, sudo won't be needed.${NC}"
+        else
+            echo -e "${YELLOW}Using sudo for Docker commands...${NC}"
+        fi
+    else
+        echo -e "${RED}Error: Cannot access Docker. Please check Docker installation.${NC}"
+        echo -e "${RED}Try: sudo systemctl status docker${NC}"
+        exit 1
+    fi
 fi
 
 # Step 3: Install Docker Compose
@@ -234,10 +268,10 @@ echo "Firewall rules configured"
 
 # Step 9: Build and start services
 echo -e "${GREEN}Step 9: Building Docker images...${NC}"
-docker-compose -f docker-compose.free-tier.yml build
+$COMPOSE_CMD -f docker-compose.free-tier.yml build
 
 echo -e "${GREEN}Step 10: Starting services...${NC}"
-docker-compose -f docker-compose.free-tier.yml up -d
+$COMPOSE_CMD -f docker-compose.free-tier.yml up -d
 
 # Step 11: Wait for services to be ready
 echo -e "${GREEN}Waiting for services to start...${NC}"
@@ -245,7 +279,7 @@ sleep 10
 
 # Step 12: Check service status
 echo -e "${GREEN}Service Status:${NC}"
-docker-compose -f docker-compose.free-tier.yml ps
+$COMPOSE_CMD -f docker-compose.free-tier.yml ps
 
 # Step 13: Display useful information
 echo ""
@@ -264,11 +298,11 @@ echo "  - Submit:       http://localhost:3001"
 echo "  - Notification: http://localhost:3003"
 echo ""
 echo "Useful commands:"
-echo "  - View logs:          docker-compose -f docker-compose.free-tier.yml logs -f"
-echo "  - Stop services:      docker-compose -f docker-compose.free-tier.yml down"
-echo "  - Restart services:   docker-compose -f docker-compose.free-tier.yml restart"
+echo "  - View logs:          $COMPOSE_CMD -f docker-compose.free-tier.yml logs -f"
+echo "  - Stop services:      $COMPOSE_CMD -f docker-compose.free-tier.yml down"
+echo "  - Restart services:   $COMPOSE_CMD -f docker-compose.free-tier.yml restart"
 echo "  - Check memory:       free -h"
-echo "  - Monitor containers: docker stats"
+echo "  - Monitor containers: $DOCKER_CMD stats"
 echo ""
 echo -e "${YELLOW}Next steps:${NC}"
 echo "  1. Update frontend API endpoint to point to this server"
