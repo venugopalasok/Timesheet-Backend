@@ -1,0 +1,10 @@
+{
+  "name": "timesheet-shared",
+  "version": "1.0.0",
+  "description": "Shared utilities for timesheet microservices",
+  "main": "sqs-helper.js",
+  "dependencies": {
+    "aws-sdk": "^2.1508.0"
+  }
+}
+

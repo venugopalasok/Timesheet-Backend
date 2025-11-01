@@ -1,0 +1,112 @@
+version: '3.8'
+
+# OPTIMIZED FOR AWS FREE TIER (EC2 t2.micro - 1GB RAM)
+# - Removed MongoDB (using MongoDB Atlas Free Tier)
+# - Removed RabbitMQ (using AWS SQS Free Tier)
+# - Memory limits added to prevent OOM
+
+services:
+  # API Gateway - Single entry point
+  api-gateway:
+    image: nginx:alpine
+    container_name: api-gateway
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - auth-service
+      - save-service
+      - submit-service
+    networks:
+      - timesheet-network
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.2
+
+  save-service:
+    build: ./save-service
+    container_name: save-service
+    ports:
+      - "3000:3000"
+    environment:
+      # Use MongoDB Atlas connection string
+      MONGODB_URI: ${MONGODB_ATLAS_URI}
+      PORT: 3000
+      # SQS configuration (instead of RabbitMQ)
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      SQS_QUEUE_URL: ${SQS_QUEUE_URL}
+      NODE_ENV: production
+    networks:
+      - timesheet-network
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.25
+
+  submit-service:
+    build: ./submit-service
+    container_name: submit-service
+    ports:
+      - "3001:3001"
+    environment:
+      MONGODB_URI: ${MONGODB_ATLAS_URI}
+      PORT: 3001
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      SQS_QUEUE_URL: ${SQS_QUEUE_URL}
+      NODE_ENV: production
+    networks:
+      - timesheet-network
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.25
+
+  auth-service:
+    build: ./auth-service
+    container_name: auth-service
+    ports:
+      - "3002:3002"
+    environment:
+      MONGODB_URI: ${MONGODB_ATLAS_URI}
+      PORT: 3002
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_EXPIRES_IN: 7d
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      NODE_ENV: production
+    networks:
+      - timesheet-network
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.25
+
+  # Notification Service - Processes async events from SQS
+  notification-service:
+    build: ./notification-service
+    container_name: notification-service
+    ports:
+      - "3003:3003"
+    environment:
+      PORT: 3003
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      SQS_QUEUE_URL: ${SQS_QUEUE_URL}
+      NODE_ENV: production
+    networks:
+      - timesheet-network
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.05
+
+networks:
+  timesheet-network:
+    driver: bridge
+
+# Note: MongoDB and RabbitMQ removed - using cloud services
+# - MongoDB: MongoDB Atlas Free Tier (512MB)
+# - Messaging: AWS SQS Free Tier (1M requests/month)
+

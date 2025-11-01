@@ -14,7 +14,8 @@
     "express": "^5.1.0",
     "cors": "^2.8.5",
     "mongoose": "^8.19.2",
-    "dotenv": "^17.2.3"
+    "dotenv": "^17.2.3",
+    "amqplib": "^0.10.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
