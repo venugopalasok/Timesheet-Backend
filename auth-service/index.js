@@ -4,7 +4,59 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const validator = require('validator');
-const { connectToRabbitMQ, publishUserRegistered } = require('./rabbitmq');
+// const { connectToRabbitMQ, publishUserRegistered } = require('./rabbitmq');
+const messaging = (() => {
+  const provider = (process.env.MESSAGE_QUEUE_PROVIDER || '').toLowerCase();
+  const sqsQueueUrl = process.env.SQS_QUEUE_URL;
+  const hasSqsConfig = Boolean(sqsQueueUrl);
+
+  if (provider === 'sqs' || (!process.env.RABBITMQ_URL && hasSqsConfig)) {
+    const { sendMessage } = require('../shared/sqs-helper');
+
+    return {
+      name: 'sqs',
+      initialize: async () => {
+        if (!hasSqsConfig) {
+          console.warn('[Messaging] SQS_QUEUE_URL not configured. Message queue publishing disabled.');
+          return false;
+        }
+
+        console.log('[Messaging] Using AWS SQS for auth-service messaging');
+        return true;
+      },
+      publishUserRegistered: async (user) => {
+        if (!hasSqsConfig) {
+          console.warn('[Messaging] SQS_QUEUE_URL not configured. Skipping user registration message.');
+          return false;
+        }
+
+        try {
+          await sendMessage({
+            employeeId: user.employeeId,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            timestamp: new Date().toISOString()
+          }, 'user_registered');
+
+          console.log('[Messaging] ✓ Published user registration event to SQS');
+          return true;
+        } catch (error) {
+          console.error('Failed to publish user registered event to SQS:', error.message);
+          return false;
+        }
+      }
+    };
+  }
+
+  const { connectToRabbitMQ, publishUserRegistered } = require('./rabbitmq');
+
+  return {
+    name: 'rabbitmq',
+    initialize: connectToRabbitMQ,
+    publishUserRegistered
+  };
+})();
 
 const app = express();
 const router = express.Router();
@@ -42,11 +94,20 @@ const connectToDatabase = async (retries = 5, delay = 5000) => {
 };
 
 // Connect to database and RabbitMQ on startup
-connectToDatabase();
-connectToRabbitMQ().catch(err => {
-  console.error('Failed to connect to RabbitMQ, notifications will be disabled:', err.message);
-});
-
+// connectToDatabase();
+// connectToRabbitMQ().catch(err => {
+//   console.error('Failed to connect to RabbitMQ, notifications will be disabled:', err.message);
+// });
+// Connect to database and initialize message queue on startup
+messaging.initialize()
+  .then(success => {
+    if (!success) {
+      console.warn(`[Messaging] Initialization failed for provider "${messaging.name}". Notifications will be disabled.`);
+    }
+  })
+  .catch(err => {
+    console.error(`Failed to initialize messaging provider "${messaging.name}":`, err.message);
+  });
 // User Schema
 const userSchema = new mongoose.Schema({
   employeeId: {
@@ -268,10 +329,16 @@ router.post('/register', async (req, res) => {
     await user.save();
 
     // Publish user registered event to RabbitMQ
-    await publishUserRegistered(user).catch(err => {
-      console.error('Failed to publish user registered event:', err.message);
-      // Don't fail registration if message queue fails
-    });
+    // await publishUserRegistered(user).catch(err => {
+    //   console.error('Failed to publish user registered event:', err.message);
+    //   // Don't fail registration if message queue fails
+    // });
+
+        // Publish user registered event to message queue
+        await messaging.publishUserRegistered(user).catch(err => {
+          console.error('Failed to publish user registered event:', err.message);
+          // Don't fail registration if message queue fails
+        });
 
     // Generate token
     const token = user.generateAuthToken();
