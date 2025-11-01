@@ -49,13 +49,22 @@ const messaging = (() => {
     };
   }
 
-  const { connectToRabbitMQ, publishUserRegistered } = require('./rabbitmq');
-
-  return {
-    name: 'rabbitmq',
-    initialize: connectToRabbitMQ,
-    publishUserRegistered
-  };
+  // Fallback to RabbitMQ
+  try {
+    const { connectToRabbitMQ, publishUserRegistered } = require('./rabbitmq');
+    return {
+      name: 'rabbitmq',
+      initialize: connectToRabbitMQ,
+      publishUserRegistered
+    };
+  } catch (error) {
+    console.error('[Messaging] Failed to load RabbitMQ module:', error.message);
+    return {
+      name: 'disabled',
+      initialize: async () => false,
+      publishUserRegistered: async () => false
+    };
+  }
 })();
 
 const app = express();
