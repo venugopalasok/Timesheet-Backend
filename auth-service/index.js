@@ -102,12 +102,8 @@ const connectToDatabase = async (retries = 5, delay = 5000) => {
   }
 };
 
-// Connect to database and RabbitMQ on startup
-// connectToDatabase();
-// connectToRabbitMQ().catch(err => {
-//   console.error('Failed to connect to RabbitMQ, notifications will be disabled:', err.message);
-// });
 // Connect to database and initialize message queue on startup
+connectToDatabase();
 messaging.initialize()
   .then(success => {
     if (!success) {
