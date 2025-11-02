@@ -35,16 +35,71 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 1
 fi
 
-# Step 1: Install Nginx
+# Step 1: Check for port conflicts
 echo ""
-echo -e "${GREEN}Step 1: Installing Nginx...${NC}"
+echo -e "${GREEN}Step 1: Checking for port conflicts...${NC}"
+
+PORT_80_IN_USE=$(sudo lsof -i :80 2>/dev/null | grep LISTEN || true)
+PORT_443_IN_USE=$(sudo lsof -i :443 2>/dev/null | grep LISTEN || true)
+
+if [ ! -z "$PORT_80_IN_USE" ]; then
+    echo -e "${YELLOW}⚠️  Port 80 is already in use:${NC}"
+    echo "$PORT_80_IN_USE"
+    echo ""
+    
+    # Check if it's Docker api-gateway
+    if docker ps | grep -q api-gateway; then
+        echo -e "${YELLOW}Detected Docker api-gateway container running${NC}"
+        read -p "Stop Docker api-gateway to free port 80? (y/n): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${GREEN}Stopping Docker api-gateway...${NC}"
+            docker stop api-gateway 2>/dev/null || docker-compose stop api-gateway || true
+            sleep 2
+        else
+            echo -e "${RED}Cannot proceed. Port 80 must be available.${NC}"
+            echo -e "${YELLOW}You can manually stop the service or configure Nginx to use a different port.${NC}"
+            exit 1
+        fi
+    fi
+    
+    # Check if it's system Nginx
+    if systemctl is-active --quiet nginx 2>/dev/null; then
+        echo -e "${YELLOW}System Nginx is already running${NC}"
+        read -p "Stop system Nginx and restart with new config? (y/n): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            sudo systemctl stop nginx
+            sleep 2
+        fi
+    fi
+    
+    # Verify port is free now
+    if sudo lsof -i :80 2>/dev/null | grep -q LISTEN; then
+        echo -e "${RED}Port 80 is still in use. Please stop the service manually:${NC}"
+        sudo lsof -i :80
+        exit 1
+    fi
+fi
+
+if [ ! -z "$PORT_443_IN_USE" ]; then
+    echo -e "${YELLOW}⚠️  Port 443 is already in use:${NC}"
+    echo "$PORT_443_IN_USE"
+    read -p "Continue anyway? This may cause conflicts. (y/n): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
+fi
+
+# Step 2: Install Nginx
+echo ""
+echo -e "${GREEN}Step 2: Installing Nginx...${NC}"
 sudo apt update
 sudo apt install -y nginx
 
-# Step 2: Start and enable Nginx
-echo -e "${GREEN}Step 2: Starting Nginx service...${NC}"
-sudo systemctl start nginx
-sudo systemctl enable nginx
+# Ensure Nginx is stopped before we configure it
+sudo systemctl stop nginx 2>/dev/null || true
 
 # Step 3: Create SSL directory
 echo -e "${GREEN}Step 3: Creating SSL certificate directory...${NC}"
@@ -179,9 +234,16 @@ else
     exit 1
 fi
 
-# Step 7: Verify setup
+# Step 7: Start Nginx
 echo ""
-echo -e "${GREEN}Step 7: Verifying HTTPS setup...${NC}"
+echo -e "${GREEN}Step 7: Starting Nginx service...${NC}"
+sudo systemctl start nginx
+sudo systemctl enable nginx
+sleep 2
+
+# Step 8: Verify setup
+echo ""
+echo -e "${GREEN}Step 8: Verifying HTTPS setup...${NC}"
 
 sleep 2
 
