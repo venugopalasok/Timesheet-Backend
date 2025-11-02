@@ -11,9 +11,44 @@ NC='\033[0m'
 
 echo -e "${GREEN}Fixing Nginx configuration...${NC}"
 
-# Get EC2 IP
-EC2_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "13.201.189.218")
-echo -e "${YELLOW}Using IP: ${EC2_IP}${NC}"
+# Get EC2 IP with validation
+EC2_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "")
+if [ -z "$EC2_IP" ]; then
+    EC2_IP="13.201.189.218"
+    echo -e "${YELLOW}Could not fetch EC2 IP, using default: ${EC2_IP}${NC}"
+else
+    echo -e "${YELLOW}Using IP: ${EC2_IP}${NC}"
+fi
+
+# Validate IP format (basic check)
+if ! [[ "$EC2_IP" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+    echo -e "${RED}Invalid IP format: ${EC2_IP}${NC}"
+    echo -e "${YELLOW}Using default IP: 13.201.189.218${NC}"
+    EC2_IP="13.201.189.218"
+fi
+
+# Final validation - ensure EC2_IP is not empty (should never happen at this point, but be safe)
+if [ -z "$EC2_IP" ] || [ "$EC2_IP" = "" ]; then
+    EC2_IP="13.201.189.218"
+    echo -e "${RED}EC2_IP was empty, using default: ${EC2_IP}${NC}"
+fi
+
+# Trim any whitespace
+EC2_IP=$(echo "$EC2_IP" | xargs)
+
+echo -e "${GREEN}Final IP to use: ${EC2_IP}${NC}"
+
+# Backup existing config if it exists
+if [ -f /etc/nginx/sites-available/timesheet-backend ]; then
+    echo -e "${YELLOW}Backing up existing config...${NC}"
+    sudo cp /etc/nginx/sites-available/timesheet-backend /etc/nginx/sites-available/timesheet-backend.backup.$(date +%Y%m%d_%H%M%S)
+fi
+
+# Remove old symlink if it exists and is broken
+if [ -L /etc/nginx/sites-enabled/timesheet-backend ] && [ ! -e /etc/nginx/sites-enabled/timesheet-backend ]; then
+    echo -e "${YELLOW}Removing broken symlink...${NC}"
+    sudo rm /etc/nginx/sites-enabled/timesheet-backend
+fi
 
 # Create fixed config
 sudo tee /etc/nginx/sites-available/timesheet-backend > /dev/null <<EOF
@@ -121,6 +156,26 @@ server {
     }
 }
 EOF
+
+# Create symlink if it doesn't exist
+if [ ! -L /etc/nginx/sites-enabled/timesheet-backend ]; then
+    echo -e "${GREEN}Creating symlink to enable site...${NC}"
+    sudo ln -s /etc/nginx/sites-available/timesheet-backend /etc/nginx/sites-enabled/timesheet-backend
+fi
+
+# Verify the config file was created and contains valid server_name
+if [ -f /etc/nginx/sites-available/timesheet-backend ]; then
+    echo -e "${GREEN}Config file created successfully${NC}"
+    # Check if server_name lines are valid
+    if grep -q "server_name.*;" /etc/nginx/sites-available/timesheet-backend; then
+        echo -e "${GREEN}✓ server_name directives found${NC}"
+    else
+        echo -e "${RED}✗ No valid server_name found in config${NC}"
+        echo -e "${YELLOW}Config preview (first 20 lines):${NC}"
+        head -20 /etc/nginx/sites-available/timesheet-backend
+        exit 1
+    fi
+fi
 
 echo -e "${GREEN}Testing Nginx configuration...${NC}"
 if sudo nginx -t; then
