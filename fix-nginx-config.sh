@@ -233,10 +233,16 @@ if sudo nginx -t; then
         fi
         
         if [ -n "$COMPOSE_FILE" ] && command -v docker-compose &> /dev/null; then
-            echo -e "${GREEN}Rebuilding auth-service, save-service, and submit-service...${NC}"
-            docker-compose -f "$COMPOSE_FILE" build auth-service save-service submit-service
+            echo -e "${YELLOW}Stopping existing containers...${NC}"
+            docker-compose -f "$COMPOSE_FILE" stop auth-service save-service submit-service 2>/dev/null || true
             
-            echo -e "${GREEN}Restarting services...${NC}"
+            echo -e "${YELLOW}Removing existing containers...${NC}"
+            docker-compose -f "$COMPOSE_FILE" rm -f auth-service save-service submit-service 2>/dev/null || true
+            
+            echo -e "${GREEN}Rebuilding auth-service, save-service, and submit-service...${NC}"
+            docker-compose -f "$COMPOSE_FILE" build --no-cache auth-service save-service submit-service
+            
+            echo -e "${GREEN}Starting services...${NC}"
             docker-compose -f "$COMPOSE_FILE" up -d auth-service save-service submit-service
             
             echo -e "${GREEN}Waiting for services to start...${NC}"
@@ -247,10 +253,16 @@ if sudo nginx -t; then
             
             echo -e "${GREEN}✓ Services rebuilt and restarted${NC}"
         elif [ -n "$COMPOSE_FILE" ] && command -v docker &> /dev/null && docker compose version &> /dev/null; then
-            echo -e "${GREEN}Rebuilding auth-service, save-service, and submit-service...${NC}"
-            docker compose -f "$COMPOSE_FILE" build auth-service save-service submit-service
+            echo -e "${YELLOW}Stopping existing containers...${NC}"
+            docker compose -f "$COMPOSE_FILE" stop auth-service save-service submit-service 2>/dev/null || true
             
-            echo -e "${GREEN}Restarting services...${NC}"
+            echo -e "${YELLOW}Removing existing containers...${NC}"
+            docker compose -f "$COMPOSE_FILE" rm -f auth-service save-service submit-service 2>/dev/null || true
+            
+            echo -e "${GREEN}Rebuilding auth-service, save-service, and submit-service...${NC}"
+            docker compose -f "$COMPOSE_FILE" build --no-cache auth-service save-service submit-service
+            
+            echo -e "${GREEN}Starting services...${NC}"
             docker compose -f "$COMPOSE_FILE" up -d auth-service save-service submit-service
             
             echo -e "${GREEN}Waiting for services to start...${NC}"
