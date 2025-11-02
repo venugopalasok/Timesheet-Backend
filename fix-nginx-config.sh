@@ -48,6 +48,17 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
 
+    # Handle OPTIONS preflight requests
+    if (\$request_method = 'OPTIONS') {
+        add_header 'Access-Control-Allow-Origin' '*' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, PATCH, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization, X-Requested-With' always;
+        add_header 'Access-Control-Max-Age' '3600' always;
+        add_header 'Content-Type' 'text/plain charset=UTF-8';
+        add_header 'Content-Length' 0;
+        return 204;
+    }
+
     # CORS headers (applied to all responses)
     add_header 'Access-Control-Allow-Origin' '*' always;
     add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, PATCH, OPTIONS' always;
@@ -110,10 +121,30 @@ EOF
 echo -e "${GREEN}Testing Nginx configuration...${NC}"
 if sudo nginx -t; then
     echo -e "${GREEN}✓ Configuration is valid${NC}"
-    sudo systemctl reload nginx
-    echo -e "${GREEN}✓ Nginx reloaded successfully${NC}"
+    
+    # Check if Nginx is running
+    if systemctl is-active --quiet nginx; then
+        echo -e "${GREEN}Reloading Nginx...${NC}"
+        sudo systemctl reload nginx
+        echo -e "${GREEN}✓ Nginx reloaded successfully${NC}"
+    else
+        echo -e "${YELLOW}Nginx is not running. Starting Nginx...${NC}"
+        sudo systemctl start nginx
+        sudo systemctl enable nginx
+        echo -e "${GREEN}✓ Nginx started successfully${NC}"
+        
+        # Verify it's running
+        sleep 2
+        if systemctl is-active --quiet nginx; then
+            echo -e "${GREEN}✓ Nginx is now running${NC}"
+        else
+            echo -e "${RED}✗ Failed to start Nginx. Check logs: sudo journalctl -u nginx${NC}"
+            exit 1
+        fi
+    fi
 else
     echo -e "${RED}✗ Configuration still has errors${NC}"
+    echo -e "${YELLOW}Check the error messages above${NC}"
     exit 1
 fi
 

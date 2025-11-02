@@ -1,11 +1,10 @@
 const express = require('express');
-const cors = require('cors');
 const mongoose = require('mongoose');
 
 const app = express();
 const router = express.Router();
 
-app.use(cors());
+// CORS is handled by nginx reverse proxy - no need to configure here
 app.use(express.json());
 
 const mongoDBURI = process.env.MONGODB_URI || 'mongodb://admin:password@mongo:27017/timesheet?authSource=admin';

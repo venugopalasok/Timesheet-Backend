@@ -234,9 +234,28 @@ fi
 # Step 7: Start Nginx
 echo ""
 echo -e "${GREEN}Step 7: Starting Nginx service...${NC}"
-sudo systemctl start nginx
-sudo systemctl enable nginx
+
+# Check if Nginx is already running
+if systemctl is-active --quiet nginx; then
+    echo -e "${YELLOW}Nginx is already running. Reloading...${NC}"
+    sudo systemctl reload nginx
+else
+    echo -e "${GREEN}Starting Nginx...${NC}"
+    sudo systemctl start nginx
+    sudo systemctl enable nginx
+fi
+
 sleep 2
+
+# Verify Nginx is running
+if systemctl is-active --quiet nginx; then
+    echo -e "${GREEN}✓ Nginx is running${NC}"
+else
+    echo -e "${RED}✗ Failed to start Nginx${NC}"
+    echo -e "${YELLOW}Check status: sudo systemctl status nginx${NC}"
+    echo -e "${YELLOW}Check logs: sudo journalctl -u nginx -n 50${NC}"
+    exit 1
+fi
 
 # Step 8: Verify setup
 echo ""
